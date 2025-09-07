@@ -1,9 +1,5 @@
 package de.dmitrij.patuk.framework;
 
-import de.dmitrij.patuk.app.AppController;
-import de.dmitrij.patuk.app.AppService;
-import de.dmitrij.patuk.app.HomeController;
-
 import java.lang.reflect.InvocationTargetException;
 
 public class MyTinyApplication {
@@ -40,14 +36,23 @@ public class MyTinyApplication {
 
         //new ====================
         var classProvider = new MyTinyClassProvider(context, propertiesProvider);
-        var homeController = classProvider.getBeanClass(HomeController.class);
-        homeController.index();
-        var appController = classProvider.getBeanClass(AppController.class);
-        appController.index();
+        var server = new MyTinyHttpServer(8080);
+        var controllerHandler = new MyTinyControllerHandler(server, classProvider);
+
+        var controllerClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(), MyTinyController.class);
+        for(var controllerClass : controllerClasses) {
+            controllerHandler.registerController(controllerClass);
+        }
+        System.out.println("Application started!");
+        server.start();
+
+        // gracefully shutdown when a kill signal is sent
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down server...");
+            server.stop();
+            System.out.println("Server stopped.");
+        }));
         //new ====================
 
-        var service = context.getBean(AppService.class);
-        System.out.println("Starting " + service.call());
-        System.out.println("Application started!");
     }
 }

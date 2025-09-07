@@ -680,3 +680,127 @@ public class AppController {
     }
 }
 ```
+
+## 7. Creating the Controller, Server and ServerHandler
+
+Now we want to be able to automatically find all classes annotated with `@MyTinyController` and register them in our server for handling of get requests.
+
+First we declare two annotations `MyTinyController` and `MyTinyGet` to mark controller classes and methods that should handle GET requests.
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+public @interface MyTinyController {
+    String route() default "";
+}
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface MyTinyGet {
+    String route() default "";
+}
+```
+
+Next we need a simple server to open a connection and handle requests.
+We create a server on a certain port and declare a method `bindContext` that will register our controllers and methods to their paths.
+It will call the registered method and return a HTTP 200 response with a string.
+We will use an anonymous class implementing `GetResponse` to hold the handlers.
+```java 
+public class MyTinyHttpServer {
+    private final int port;
+    private HttpServer server;
+
+    public MyTinyHttpServer(int port) {
+        try {
+            this.port = port;
+            this.server = HttpServer.create(new InetSocketAddress(port), 0);
+            System.out.printf("Server created on port %d %n", port);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void bindContext(String path, GetResponse response) {
+        System.out.printf("Binding context for path: %s%n", path);
+        server.createContext(path, exchange -> {
+            System.out.printf("Received request from: %s%n", exchange.getRequestURI());
+            exchange.sendResponseHeaders(200, 0);
+            exchange.getResponseBody().write(response.handle().getBytes(StandardCharsets.UTF_8));
+            exchange.getResponseBody().close();
+            exchange.close();
+        });
+    }
+
+    public void start() {
+        server.start();
+        System.out.printf("Server created on port %d %n", port);
+    }
+
+    public void stop() {
+        server.stop(0);
+    }
+
+    public interface GetResponse{
+        String handle();
+    }
+}
+```
+
+Next the update to `MyTinyApplication`
+We instantiate the new classes, use our class scanner to scan for controllers and pass each found controller to the controller handler in order to register its GET methods.
+At last we start the server and create a new thread listening on the shutdown signal from the OS in order to gracefully shut down the server.
+```java
+public class MyTinyApplication {
+    public static void run(Class<?> appClass, String[] args) {
+        if(!appClass.isAnnotationPresent(MyTinyBootApplication.class)) {
+            throw new IllegalArgumentException(appClass.getName() +
+                    " is not annotated with @MyTinyBootApplication");
+        }
+
+        System.out.println("Starting " + appClass.getName());
+
+        try {
+            var instance = appClass.getDeclaredConstructor().newInstance();
+            System.out.println("Created main application instance: " + instance);
+        } catch (NoSuchMethodException | InstantiationException |
+                 RuntimeException | IllegalAccessException |
+                 InvocationTargetException e) {
+            e.printStackTrace();
+            System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
+        }
+
+        var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
+        System.out.println(propertiesScanner.get("my.boot.application-name"));
+
+        var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
+        var context = new MyTinyApplicationContext(propertiesProvider);
+
+        var classScanner = new MyTinyClassScanner();
+        var configClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(),
+                MyTinyConfiguration.class);
+        for(var configClass : configClasses) {
+            context.registerConfiguration(configClass);
+        }
+
+        //new ====================
+        var classProvider = new MyTinyClassProvider(context, propertiesProvider);
+        var server = new MyTinyHttpServer(8080);
+        var controllerHandler = new MyTinyControllerHandler(server, classProvider);
+
+        var controllerClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(), MyTinyController.class);
+        for(var controllerClass : controllerClasses) {
+            controllerHandler.registerController(controllerClass);
+        }
+        System.out.println("Application started!");
+        server.start();
+
+        // gracefully shutdown when a kill signal is sent
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down server...");
+            server.stop();
+            System.out.println("Server stopped.");
+        }));
+        //new ====================
+        
+    }
+}
+```
