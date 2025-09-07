@@ -40,6 +40,32 @@ public class MyTinyApplication {
         System.out.println("Application started!");
     }
 }
-
 ```
 At this time it only creates a new instance of the Class it is applied to and prints some messages.
+
+## 2. Reading properties file
+
+A simple class that gets a file name and searches for it in our applications resources directory.
+If found it is simply read by the existing Properties class and can be accessed with keys.
+```java
+public class MyTinyPropertiesScanner {
+    private final Properties properties = new Properties();
+    public MyTinyPropertiesScanner(String fileName) {
+        //getClass() gets the current class
+        //getClassLoader().getResourceAsStream() looks in the resource 
+        // directory and opens a file
+        try (var fis = getClass().getClassLoader()
+                .getResourceAsStream(fileName)) {
+            if (fis != null) {
+                properties.load(fis);
+                System.out.println("Loaded properties from " + fileName);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load properties file", e);
+        }
+    }
+    public String get(String key) {
+        return properties.getProperty(key);
+    }
+}
+```

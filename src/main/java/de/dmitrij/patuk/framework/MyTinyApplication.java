@@ -20,6 +20,13 @@ public class MyTinyApplication {
             e.printStackTrace();
             System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
         }
+
+        //new
+        var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
+        System.out.println(propertiesScanner.get("my.boot.application-name"));
+        //new
+
+
         System.out.println("Application started!");
     }
 }
