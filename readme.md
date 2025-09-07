@@ -333,3 +333,121 @@ The `application.properties` file
 my.boot.application-name:My App Name
 my.config-value:The Config Value
 ```
+
+## 5. Scanning for annotated classes
+
+Next we will need the ability to find all classes with a certain annotation in our package. For example all classes annotated with `@MyTinyConfiguration` in order to automatically register all dependency providers.
+
+This class scans from the base directory of our application every single sub package and collects the Classes annotated with the given annotation.
+They are simply returned inside a list for further processing.
+```java
+
+public class MyTinyClassScanner {
+
+    public List<Class<?>> findAnnotatedClasses(String packageName, Class annotation) {
+        System.out.println("findAnnotatedClasses " + packageName + " for " + annotation);
+        var annotatedClasses = new ArrayList<Class<?>>();
+
+        //Turn package names into a path
+        var path = packageName.replace('.', '/');
+
+        try {
+            //find all directories in our package that we need to scan
+            var resources = Thread.currentThread().getContextClassLoader().getResources(path);
+            List<File> dirs = new ArrayList<>();
+            while (resources.hasMoreElements()) {
+                var url = resources.nextElement();
+                dirs.add(new File(url.getFile()));
+            }
+
+            //scan the found directories for the annotated classes
+            for (File dir : dirs) {
+                annotatedClasses.addAll(findClasses(dir, packageName, annotation, 0));
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+        return annotatedClasses;
+    }
+
+    private List<Class<?>> findClasses(File dir, String packageName, Class annotation, int level)
+            throws ClassNotFoundException {
+        System.out.println("called findClasses " + packageName + " for " + annotation + " level " + level);
+        List<Class<?>> classes = new ArrayList<>();
+        if(dir == null){
+            return classes;
+        }
+        if (!dir.exists()) {
+            return classes;
+        }
+        //get all files in the directory
+        for (File f : dir.listFiles()) {
+            if (f.isDirectory()) {
+                System.out.printf("Scanning directory %s...%n", f.getName());
+                //go one directory down and scan again
+                classes.addAll(findClasses(f, packageName + "." + f.getName(), annotation, level + 1));
+                continue;
+            }
+            //we have a class
+            if (f.getName().endsWith(".class")) {
+                //we get the package name and get the class for that name
+                String className = packageName + '.' + f.getName().replace(".class", "");
+                System.out.println("Getting class for name " + className);
+                Class<?> clazz = Class.forName(className);
+                if (clazz.isAnnotationPresent(annotation)) {
+                    System.out.println("Found class " + clazz.getSimpleName() + "with annotation " + annotation);
+                    classes.add(clazz);
+                }
+            }
+        }
+        return classes;
+    }
+}
+```
+
+Changes inside `MyTinyApplication`
+
+We simply create a new instance of our `MyTinyClassScanner` and let it search for all classes annotated with `@MyTinyConfiguration`.
+Next we register all those classes inside our `MyTinyApplicationContext` and simply request our `AppService` as a test.
+```java
+public class MyTinyApplication {
+    public static void run(Class<?> appClass, String[] args) {
+        if(!appClass.isAnnotationPresent(MyTinyBootApplication.class)) {
+            throw new IllegalArgumentException(appClass.getName() +
+                    " is not annotated with @MyTinyBootApplication");
+        }
+
+        System.out.println("Starting " + appClass.getName());
+
+        try {
+            var instance = appClass.getDeclaredConstructor().newInstance();
+            System.out.println("Created main application instance: " + instance);
+        } catch (NoSuchMethodException | InstantiationException |
+                 RuntimeException | IllegalAccessException |
+                 InvocationTargetException e) {
+            e.printStackTrace();
+            System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
+        }
+
+        var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
+        System.out.println(propertiesScanner.get("my.boot.application-name"));
+
+        var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
+        var context = new MyTinyApplicationContext(propertiesProvider);
+
+        //new ====================
+        var classScanner = new MyTinyClassScanner();
+        var configClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(),
+                MyTinyConfiguration.class);
+        for(var configClass : configClasses) {
+            context.registerConfiguration(configClass);
+        }
+        //new ====================
+
+        var service = context.getBean(AppService.class);
+        System.out.println("Starting " + service.call());
+        System.out.println("Application started!");
+    }
+}
+```

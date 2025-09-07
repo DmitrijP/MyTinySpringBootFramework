@@ -6,13 +6,11 @@ import java.util.Map;
 
 public class MyTinyApplicationContext {
     private final Map<Class<?>, Object> beans = new HashMap<>();
-
-    //new
     private final MyTinyPropertiesProvider propertiesProvider;
+
     public MyTinyApplicationContext(MyTinyPropertiesProvider propertiesProvider) {
         this.propertiesProvider = propertiesProvider;
     }
-    //new
 
     public void registerConfiguration(Class<?> configClass) {
         //We check if the class is annotated with @MyConfiguration
@@ -40,7 +38,6 @@ public class MyTinyApplicationContext {
                     throw new RuntimeException("Missing return type for method " + method.getName());
                 }
 
-                //new
                 ArrayList<Object> values = new ArrayList<>();
                 var parameters = method.getParameters();
                 for (var parameter : parameters) {
@@ -50,7 +47,6 @@ public class MyTinyApplicationContext {
                     var value = propertiesProvider.provide(parameter);
                     values.add(value);
                 }
-                //new
 
                 var object = method.invoke(configInstance, values.toArray());
                 var name = method.getName();

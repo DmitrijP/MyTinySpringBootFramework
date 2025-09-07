@@ -1,11 +1,11 @@
 package de.dmitrij.patuk.framework;
 
 
-import de.dmitrij.patuk.framework.testvalues.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 
 class MyTinyApplicationContextTests {
 
@@ -49,5 +49,49 @@ class MyTinyApplicationContextTests {
         var service = context.getBean(ServiceWithDependency.class);
         assertInstanceOf(ServiceWithDependency.class, service);
         assertNotNull(service.getValue());
+    }
+}
+
+
+class Service {
+}
+class ServiceWithDependency {
+    private final String value;
+
+    public ServiceWithDependency(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
+    }
+}
+
+@MyTinyConfiguration
+class TestClassWithAnnotation {
+}
+
+@MyTinyConfiguration
+class TestClassWithAnnotationAndBean {
+    @MyTinyBean
+    public Service provideService() {
+        return new Service();
+    }
+}
+
+@MyTinyConfiguration
+class TestClassWithAnnotationAndBeanNoReturnType {
+    @MyTinyBean
+    public void provideService() {
+
+    }
+}
+class TestClassWithoutAnnotation {
+}
+@MyTinyConfiguration
+class TestClassWithProperties {
+    @MyTinyBean
+    public ServiceWithDependency provideService(@MyTinyValue(name = "my.config-value") String value) {
+        return new ServiceWithDependency(value);
     }
 }

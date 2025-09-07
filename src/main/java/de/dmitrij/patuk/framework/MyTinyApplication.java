@@ -1,6 +1,5 @@
 package de.dmitrij.patuk.framework;
 
-import de.dmitrij.patuk.app.AppConfig;
 import de.dmitrij.patuk.app.AppService;
 
 import java.lang.reflect.InvocationTargetException;
@@ -27,16 +26,20 @@ public class MyTinyApplication {
         var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
         System.out.println(propertiesScanner.get("my.boot.application-name"));
 
-        //new
         var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
         var context = new MyTinyApplicationContext(propertiesProvider);
-        //new
 
-        context.registerConfiguration(AppConfig.class);
+        //new ====================
+        var classScanner = new MyTinyClassScanner();
+        var configClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(),
+                MyTinyConfiguration.class);
+        for(var configClass : configClasses) {
+            context.registerConfiguration(configClass);
+        }
+        //new ====================
+
         var service = context.getBean(AppService.class);
         System.out.println("Starting " + service.call());
-
-
         System.out.println("Application started!");
     }
 }
