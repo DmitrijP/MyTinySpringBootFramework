@@ -28,9 +28,12 @@ public class MyTinyHttpServer {
     public void bindContext(String path, GetResponse response) {
         System.out.printf("Binding context for path: %s%n", path);
         server.createContext(path, exchange -> {
-            System.out.printf("Received request from: %s%n", exchange.getRequestURI());
+            var uri = exchange.getRequestURI();
+            System.out.printf("URI: %s%n", uri);
+            var query = uri.getQuery();
+            System.out.printf("Query: %s%n", query);
             exchange.sendResponseHeaders(200, 0);
-            exchange.getResponseBody().write(response.handle().getBytes(StandardCharsets.UTF_8));
+            exchange.getResponseBody().write(response.handle(query).getBytes(StandardCharsets.UTF_8));
             exchange.getResponseBody().close();
             exchange.close();
         });
@@ -41,6 +44,6 @@ public class MyTinyHttpServer {
     }
 
     public interface GetResponse{
-        String handle();
+        String handle(String query);
     }
 }

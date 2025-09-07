@@ -34,10 +34,13 @@ public class MyTinyApplication {
             context.registerConfiguration(configClass);
         }
 
-        //new ====================
         var classProvider = new MyTinyClassProvider(context, propertiesProvider);
         var server = new MyTinyHttpServer(8080);
-        var controllerHandler = new MyTinyControllerHandler(server, classProvider);
+
+        //new ====================
+        var myRequestParamHandler = new MyTinyRequestParamHandler();
+        var controllerHandler = new MyTinyControllerHandler(server, classProvider, myRequestParamHandler);
+        //new ====================
 
         var controllerClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(), MyTinyController.class);
         for(var controllerClass : controllerClasses) {
@@ -52,7 +55,5 @@ public class MyTinyApplication {
             server.stop();
             System.out.println("Server stopped.");
         }));
-        //new ====================
-
     }
 }

@@ -17,12 +17,14 @@ public class MyTinyControllerHandlerTests {
     MyTinyHttpServer server;
     MyTinyClassProvider provider;
     MyTinyControllerHandler handler;
+    MyTinyRequestParamHandler requestParamHandler;
 
     @BeforeEach
     void setup() {
         server = mock(MyTinyHttpServer.class);
         provider = mock(MyTinyClassProvider.class);
-        handler = new MyTinyControllerHandler(server, provider);
+        requestParamHandler = mock(MyTinyRequestParamHandler.class);
+        handler = new MyTinyControllerHandler(server, provider,  requestParamHandler);
     }
 
     @Test

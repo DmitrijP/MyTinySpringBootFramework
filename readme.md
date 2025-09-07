@@ -804,3 +804,185 @@ public class MyTinyApplication {
     }
 }
 ```
+
+## 8. QueryParam handling
+
+We want to be able to handle query parameters inside our controller methods.
+So we first create the annotation as usual.
+
+Notice the `Target` and the `Parameter`of the annotation. It requires a name of the query parameter to be matched against our method parameter.
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.PARAMETER)
+public @interface MyTinyRequestParam {
+    String name() default "";
+}
+```
+
+Now the Handler
+The query looks like this `name=value&name2=value2&whateverkey=value3`, so we first need to parse it into a key value map for easy access.
+Our next step is the `handle()` method. It recieves a Parameter from our Controller method and matches it against a key from the query map.
+We take the value from the map and cast it to the type of the parameter and simply return it.
+```java 
+public class MyTinyRequestParamHandler {
+    public Map<String, String> getRequestParams(String query) {
+        var parsedParams = new HashMap<String, String>();
+        if (query == null) {
+            return parsedParams;
+        }
+        if (query.isEmpty()) {
+            return parsedParams;
+        }
+        var queryParams = query.split("&");
+        for (var param : queryParams) {
+            if (param.isEmpty()) {
+                continue;
+            }
+            var paramParts = param.split("=");
+            if (paramParts.length != 2) {
+                continue;
+            }
+            parsedParams.put(paramParts[0], paramParts[1]);
+        }
+        return parsedParams;
+    }
+
+    public <T> T handle(Parameter methodParameter, Map<String, String> requestParams) {
+        if (!methodParameter.isAnnotationPresent(MyTinyRequestParam.class)) {
+            throw new RuntimeException(
+                    "Parameter " + methodParameter.getName() + " is not annotated with @MyTinyRequestParam");
+        }
+        var annotation = methodParameter.getAnnotation(MyTinyRequestParam.class);
+        var name = annotation.name();
+        var type = methodParameter.getType();
+        if (!requestParams.containsKey(name)) {
+            throw new RuntimeException("Parameter " + name + " is not inside request parameters");
+        }
+        var value = requestParams.get(name);
+
+        if (type.equals(String.class)) {
+            return (T) value;
+        } else if (type.equals(int.class) || type.equals(Integer.class)) {
+            return (T) Integer.valueOf(value);
+        } else if (type.equals(boolean.class) || type.equals(Boolean.class)) {
+            return (T) Boolean.valueOf(value);
+        } else if (type.equals(long.class) || type.equals(Long.class)) {
+            return (T) Long.valueOf(value);
+        } else if (type.equals(double.class) || type.equals(Double.class)) {
+            return (T) Double.valueOf(value);
+        } else if (type.equals(float.class) || type.equals(Float.class)) {
+            return (T) Float.valueOf(value);
+        }
+        throw new RuntimeException("Type " + type + " is not supported");
+    }
+
+    public boolean canHandle(Parameter parameter) {
+        return parameter.isAnnotationPresent(MyTinyRequestParam.class);
+    }
+}
+```
+
+Now our HTTPServer, we update `getResponse` interface to receive the query for further processing.
+We will simply take the query from the `URI` and pass it to our `ControllerHandler`
+```java 
+
+public class MyTinyHttpServer {
+    private final int port;
+    private HttpServer server;
+
+    public MyTinyHttpServer(int port) {
+        try {
+            this.port = port;
+            this.server = HttpServer.create(new InetSocketAddress(port), 0);
+            System.out.printf("Server created on port %d %n", port);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void start() {
+        server.start();
+        System.out.printf("Server created on port %d %n", port);
+    }
+
+    public void bindContext(String path, GetResponse response) {
+        System.out.printf("Binding context for path: %s%n", path);
+        server.createContext(path, exchange -> {
+            var uri = exchange.getRequestURI();
+            System.out.printf("URI: %s%n", uri);
+            var query = uri.getQuery();
+            System.out.printf("Query: %s%n", query);
+            exchange.sendResponseHeaders(200, 0);
+            exchange.getResponseBody().write(response.handle(query).getBytes(StandardCharsets.UTF_8));
+            exchange.getResponseBody().close();
+            exchange.close();
+        });
+    }
+
+    public void stop() {
+        server.stop(0);
+    }
+
+    public interface GetResponse{
+        String handle(String query);
+    }
+}
+```
+
+Next we update our `MyTinyControllerHandler` to process the query.
+It needs our new `MyTinyRequestParamHandler` as a dependency. Now we simply use it inside the matching method to first parse the query and next find all the required values from the query.
+Those values are stored in an Object array and passed down to the invoked method of our matching controller.
+```java
+public class MyTinyControllerHandler {
+    private final MyTinyHttpServer server;
+    private final MyTinyClassProvider classProvider;
+    private final MyTinyRequestParamHandler requestQueryHandler;
+
+    public MyTinyControllerHandler(MyTinyHttpServer server,
+                                   MyTinyClassProvider classProvider,
+                                   MyTinyRequestParamHandler requestHandler) {
+        this.server = server;
+        this.classProvider = classProvider;
+        this.requestQueryHandler = requestHandler;
+    }
+
+    public void registerController(Class<?> controller) {
+        System.out.printf("Registering controller: %s\n", controller.getSimpleName());
+        if (!controller.isAnnotationPresent(MyTinyController.class)) {
+            return;
+        }
+        var classAnnotation = controller.getAnnotation(MyTinyController.class);
+        var classRoute = classAnnotation.route();
+        System.out.printf("Registering class route: %s\n", classRoute);
+        var methods = controller.getDeclaredMethods();
+        for (var method : methods) {
+            if (method.isAnnotationPresent(MyTinyGet.class)) {
+                var methodAnnotation = method.getAnnotation(MyTinyGet.class);
+                var methodRoute = methodAnnotation.route();
+                System.out.printf("Registering method route: %s\n", methodRoute);
+
+                server.bindContext(classRoute + "/" + methodRoute, (String query) -> {
+                    //new =============
+                    var queryParams = requestQueryHandler.getRequestParams(query);
+
+                    try {
+                        var controllerInstance = classProvider.getBeanClass(controller);
+                        var methodParams = method.getParameters();
+                        ArrayList<Object> params = new ArrayList<>();
+                        for (var param : methodParams) {
+                            if(requestQueryHandler.canHandle(param)){
+                               params.add(requestQueryHandler.handle(param, queryParams));
+                            }
+                        }
+                        return (String) method.invoke(controllerInstance,  params.toArray());
+                    //new =============
+                        
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            }
+        }
+    }
+}
+```

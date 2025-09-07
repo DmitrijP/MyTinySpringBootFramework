@@ -3,6 +3,7 @@ package de.dmitrij.patuk.app;
 import de.dmitrij.patuk.framework.MyTinyController;
 import de.dmitrij.patuk.framework.MyTinyGet;
 import de.dmitrij.patuk.framework.MyTinyInject;
+import de.dmitrij.patuk.framework.MyTinyRequestParam;
 
 @MyTinyController(route = "/app")
 public class AppController {
@@ -14,8 +15,8 @@ public class AppController {
     }
 
     @MyTinyGet(route = "index")
-    public String index(){
-        return wrapInHtml("app controller", appService.call());
+    public String index(@MyTinyRequestParam(name = "name") String name) {
+        return wrapInHtml("app controller \n" + "called by: " + name, appService.call());
     }
 
     private String wrapInHtml(String controller, String serviceResult) {
