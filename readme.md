@@ -140,3 +140,196 @@ public class MyTinyApplicationContext {
 }
 ```
 
+## 4. Autoinjection of Properties
+
+We have created a lass in `2. Reading properties files` that is able to read the .properties File and provide us with those properties.
+We will now make use of that.
+
+First we need an annotation to mark those parameters that should be provided with values from the properties file.
+Notice the `Target` of the annotation and the property `name()` that is able to store a string.
+This will be used to name the property key that we want to be provided.
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.PARAMETER)
+public @interface MyTinyValue {
+    String name() default "";
+}
+```
+
+Now the class that does most of the work. It receives the properties scanned that we build earlier.
+Each call to `provide()` expects a Parameter. That parameter must be annotated with `@MyTinyValue`.
+We extract the string that is inside the `name()` property of the annotation and use it to get the property from the `properties scanner`.
+```java
+public class MyTinyPropertiesProvider {
+    private final MyTinyPropertiesScanner propertiesScanner;
+
+    public MyTinyPropertiesProvider(MyTinyPropertiesScanner propertiesScanner) {
+        this.propertiesScanner = propertiesScanner;
+    }
+
+    public String provide(Parameter parameter) {
+        if (!parameter.isAnnotationPresent(MyTinyValue.class)) {
+            throw new IllegalArgumentException("@MyTinyValue annotation is not present");
+        }
+
+        var annotation = parameter.getAnnotation(MyTinyValue.class);
+        var propertyName = annotation.name();
+
+        if(propertyName.isEmpty()) {
+            throw new IllegalArgumentException("@MyTinyPropertyName annotation is not present");
+        }
+
+        return propertiesScanner.get(propertyName);
+    }
+
+    public boolean canProvide(Parameter parameter) {
+        if (parameter == null){
+            return false;
+        }
+        return parameter.isAnnotationPresent(MyTinyValue.class);
+    }
+}
+```
+
+Now the update to our dependency container. It requires the `PropertiesProvider` we just build.
+We use it on each parameter of a method that is annotated with `@MyTinyBean` to get the properties and store them in a list.
+This list is then passed to the constructor of our service to be created.
+```java
+
+public class MyTinyApplicationContext {
+    private final Map<Class<?>, Object> beans = new HashMap<>();
+
+    //new ===========
+    private final MyTinyPropertiesProvider propertiesProvider;
+    public MyTinyApplicationContext(MyTinyPropertiesProvider propertiesProvider) {
+        this.propertiesProvider = propertiesProvider;
+    }
+    //new ===========
+
+    public void registerConfiguration(Class<?> configClass) {
+        //We check if the class is annotated with @MyConfiguration
+        if (!configClass.isAnnotationPresent(MyTinyConfiguration.class)) {
+            return;
+        }
+
+        try {
+            //We instantiate the Class in order to call the bean methods
+            Object configInstance = configClass.getDeclaredConstructor().newInstance();
+
+            //We get all the methods
+            var methods = configInstance.getClass().getDeclaredMethods();
+            //we need at least one method
+            if (methods.length < 1) {
+                throw new RuntimeException("No provider methods found for class " + configClass.getName());
+            }
+
+            for (var method : methods) {
+                if (!method.isAnnotationPresent(MyTinyBean.class)) {
+                    continue;
+                }
+
+                if (method.getReturnType() == Void.TYPE) {
+                    throw new RuntimeException("Missing return type for method " + method.getName());
+                }
+
+                //new ===========
+                ArrayList<Object> values = new ArrayList<>();
+                var parameters = method.getParameters();
+                for (var parameter : parameters) {
+                    if(!propertiesProvider.canProvide(parameter)){
+                        continue;
+                    }
+                    var value = propertiesProvider.provide(parameter);
+                    values.add(value);
+                }
+                //new ===========
+
+                var object = method.invoke(configInstance, values.toArray());
+                var name = method.getName();
+
+                beans.put(object.getClass(), object);
+                System.out.println("Registered bean: " + name + " -> " + object.getClass().getSimpleName());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register configuration " + configClass, e);
+        }
+    }
+
+    public <T> T getBean(Class<T> beanClass) {
+        if(!beans.containsKey(beanClass)) {
+            throw new RuntimeException("No bean registered for " + beanClass);
+        }
+        return (T)beans.get(beanClass);
+    }
+}
+```
+Now the Application class. It only requires a small change.
+We inject the provider into our context, the rest should work just as it is.
+```java
+
+public class MyTinyApplication {
+    public static void run(Class<?> appClass, String[] args) {
+        if(!appClass.isAnnotationPresent(MyTinyBootApplication.class)) {
+            throw new IllegalArgumentException(appClass.getName() +
+                    " is not annotated with @MyTinyBootApplication");
+        }
+
+        System.out.println("Starting " + appClass.getName());
+
+        try {
+            var instance = appClass.getDeclaredConstructor().newInstance();
+            System.out.println("Created main application instance: " + instance);
+        } catch (NoSuchMethodException | InstantiationException |
+                 RuntimeException | IllegalAccessException |
+                 InvocationTargetException e) {
+            e.printStackTrace();
+            System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
+        }
+
+        var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
+        System.out.println(propertiesScanner.get("my.boot.application-name"));
+
+        //new ===========
+        var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
+        var context = new MyTinyApplicationContext(propertiesProvider);
+        //new ===========
+
+        context.registerConfiguration(AppConfig.class);
+        var service = context.getBean(AppService.class);
+        System.out.println("Starting " + service.call());
+
+
+        System.out.println("Application started!");
+    }
+}
+```
+
+Now an update to our `AppConfig` and `AppService` classes.
+The Config receives the `@MyTinyValue` notice the string `my.config-value` it is the key of our configuration inside the `application.properties` file.
+The `AppService` just expects that value and stores it to print it later as an example.
+```java
+@MyTinyConfiguration
+public class AppConfig {
+    @MyTinyBean
+    public AppService provideAppService(@MyTinyValue(name = "my.config-value") String value) {
+        return new AppService(value);
+    }
+}
+
+public class AppService {
+    private final String importantConfigValue;
+
+    public AppService(String importantConfigValue) {
+        this.importantConfigValue = importantConfigValue;
+    }
+
+    public String call() {
+        return "Hello from AppService! \n" + "The important config value is: " + importantConfigValue + "\n";
+    }
+}
+```
+The `application.properties` file
+```properties
+my.boot.application-name:My App Name
+my.config-value:The Config Value
+```

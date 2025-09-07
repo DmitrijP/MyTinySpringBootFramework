@@ -28,11 +28,14 @@ public class MyTinyApplication {
         System.out.println(propertiesScanner.get("my.boot.application-name"));
 
         //new
-        var context = new MyTinyApplicationContext();
+        var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
+        var context = new MyTinyApplicationContext(propertiesProvider);
+        //new
+
         context.registerConfiguration(AppConfig.class);
         var service = context.getBean(AppService.class);
         System.out.println("Starting " + service.call());
-        //new
+
 
         System.out.println("Application started!");
     }
