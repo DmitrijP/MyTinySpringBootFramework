@@ -69,3 +69,74 @@ public class MyTinyPropertiesScanner {
     }
 }
 ```
+
+## 3. Creating a Dependency Container
+
+We create a container to scan our configuration classes that are marked with `@MyTinyConfiguration` and provide dependenceis via `@MyTinyBean`
+
+The Annotations. Notice the Target of `MyTinyBean` it only targets methods.
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+public @interface MyTinyConfiguration {
+}
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface MyTinyBean {
+}
+```
+
+Now the dependency container. It stores the instances of classes that are created inside methods annotated with `@MyTinyBean` inside a Map.
+```java
+public class MyTinyApplicationContext {
+    private final Map<Class<?>, Object> beans = new HashMap<>();
+
+    public void registerConfiguration(Class<?> configClass) {
+        //We check if the class is annotated with @MyConfiguration
+        if (!configClass.isAnnotationPresent(MyTinyConfiguration.class)) {
+            return;
+        }
+
+        try {
+            //We instantiate the Class in order to call the bean methods
+            Object configInstance = configClass.getDeclaredConstructor().newInstance();
+
+            //We get all the methods
+            var methods = configInstance.getClass().getDeclaredMethods();
+            //we need at least one method
+            if (methods.length < 1) {
+                throw new RuntimeException("No provider methods found for class " + configClass.getName());
+            }
+
+            for (var method : methods) {
+                //we only care about annotated methods
+                if (!method.isAnnotationPresent(MyTinyBean.class)) {
+                    continue;
+                }
+
+                //our provider methods must have a return type that is not void.
+                if (method.getReturnType() == Void.TYPE) {
+                    throw new RuntimeException("Missing return type for method " + method.getName());
+                }
+
+                var object = method.invoke(configInstance);
+                var name = method.getName();
+
+                beans.put(object.getClass(), object);
+                System.out.println("Registered bean: " + name + " -> " + object.getClass().getSimpleName());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register configuration " + configClass, e);
+        }
+    }
+
+    public <T> T getBean(Class<T> beanClass) {
+        if(!beans.containsKey(beanClass)) {
+            throw new RuntimeException("No bean registered for " + beanClass);
+        }
+        return (T)beans.get(beanClass);
+    }
+}
+```
+

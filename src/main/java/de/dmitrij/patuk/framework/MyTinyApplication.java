@@ -1,5 +1,8 @@
 package de.dmitrij.patuk.framework;
 
+import de.dmitrij.patuk.app.AppConfig;
+import de.dmitrij.patuk.app.AppService;
+
 import java.lang.reflect.InvocationTargetException;
 
 public class MyTinyApplication {
@@ -21,11 +24,15 @@ public class MyTinyApplication {
             System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
         }
 
-        //new
         var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
         System.out.println(propertiesScanner.get("my.boot.application-name"));
-        //new
 
+        //new
+        var context = new MyTinyApplicationContext();
+        context.registerConfiguration(AppConfig.class);
+        var service = context.getBean(AppService.class);
+        System.out.println("Starting " + service.call());
+        //new
 
         System.out.println("Application started!");
     }
