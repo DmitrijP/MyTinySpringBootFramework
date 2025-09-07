@@ -65,4 +65,8 @@ public class MyTinyApplicationContext {
         }
         return (T)beans.get(beanClass);
     }
+
+    public boolean isBeanPresent(Class<?> beanClass) {
+        return beans.containsKey(beanClass);
+    }
 }

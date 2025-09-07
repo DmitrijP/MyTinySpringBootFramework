@@ -451,3 +451,232 @@ public class MyTinyApplication {
     }
 }
 ```
+
+## 6. Providing classes on the fly
+
+Now we will build the ability to just ask for a class that has a constructor annotated with `@MyTinyInject`.
+This Provider should be able to take the class, look at its constructor, and create all required dependencies to instantiate that class.
+
+Notice the `Target` of the annotation. It can only be applied on the constructor.
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.CONSTRUCTOR)
+public @interface MyTinyInject {
+}
+```
+Next the Provider itself. It requires the Context and Properties provider as a dependency in order to be able to request for already registered `Beans` and `Properties`.
+It will find the constructor annotated with `@MyTinyInject` and request all parameters of that constructor.
+We will iterate over all parameters and see if it is inside a `Bean` or a `Property`.
+Then we just pass all those objects to the constructor and instantiate the object.
+
+Notice the use of generics `<T>` we do this to take advantage of type safety.
+```java
+public class MyTinyClassProvider {
+    private final MyTinyApplicationContext context;
+    private final MyTinyPropertiesProvider propertiesProvider;
+
+    public MyTinyClassProvider(MyTinyApplicationContext context, MyTinyPropertiesProvider propertiesProvider) {
+        this.context = context;
+        this.propertiesProvider = propertiesProvider;
+    }
+
+    public <T> T getBeanClass(Class<T> clazz) {
+        var constructors = clazz.getDeclaredConstructors();
+        for (var constructor : constructors) {
+            if (!constructor.isAnnotationPresent(MyTinyInject.class)) {
+                continue;
+            }
+
+            var params = constructor.getParameters();
+            if (params.length == 0) {
+                try {
+                    return (T) constructor.newInstance();
+                } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            
+            ArrayList<Object> values = new ArrayList<>();
+            for (var param : params) {
+                if (propertiesProvider.canProvide(param)) {
+                    var bean = propertiesProvider.provide(param);
+                    if (bean == null) {
+                        throw new RuntimeException(String.format("bean %s not found", param.getName()));
+                    }
+                    values.add(bean);
+                    continue;
+                }
+
+                var paramType = param.getType();
+                if (context.isBeanPresent(paramType)) {
+                    var bean = context.getBean(paramType);
+                    if (bean == null) {
+                        throw new RuntimeException(String.format("bean %s not found", param.getName()));
+                    }
+                    values.add(bean);
+                    continue;
+                }
+                throw new RuntimeException(String.format("bean %s not found", param.getName()));
+            }
+            
+            try {
+                var instance = constructor.newInstance(values.toArray());
+                return (T) instance;
+            } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        throw new RuntimeException(String.format("bean %s not found", clazz.getName()));
+    }
+}
+```
+
+Changes to `MyTinyApplicationContext`
+We have simply added a helper method that lets us check if the required type is present.
+```java
+
+public class MyTinyApplicationContext {
+    private final Map<Class<?>, Object> beans = new HashMap<>();
+    private final MyTinyPropertiesProvider propertiesProvider;
+
+    public MyTinyApplicationContext(MyTinyPropertiesProvider propertiesProvider) {
+        this.propertiesProvider = propertiesProvider;
+    }
+
+    public void registerConfiguration(Class<?> configClass) {
+        //We check if the class is annotated with @MyConfiguration
+        if (!configClass.isAnnotationPresent(MyTinyConfiguration.class)) {
+            return;
+        }
+
+        try {
+            //We instantiate the Class in order to call the bean methods
+            Object configInstance = configClass.getDeclaredConstructor().newInstance();
+
+            //We get all the methods
+            var methods = configInstance.getClass().getDeclaredMethods();
+            //we need at least one method
+            if (methods.length < 1) {
+                throw new RuntimeException("No provider methods found for class " + configClass.getName());
+            }
+
+            for (var method : methods) {
+                if (!method.isAnnotationPresent(MyTinyBean.class)) {
+                    continue;
+                }
+
+                if (method.getReturnType() == Void.TYPE) {
+                    throw new RuntimeException("Missing return type for method " + method.getName());
+                }
+
+                ArrayList<Object> values = new ArrayList<>();
+                var parameters = method.getParameters();
+                for (var parameter : parameters) {
+                    if(!propertiesProvider.canProvide(parameter)){
+                        continue;
+                    }
+                    var value = propertiesProvider.provide(parameter);
+                    values.add(value);
+                }
+
+                var object = method.invoke(configInstance, values.toArray());
+                var name = method.getName();
+
+                beans.put(object.getClass(), object);
+                System.out.println("Registered bean: " + name + " -> " + object.getClass().getSimpleName());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register configuration " + configClass, e);
+        }
+    }
+
+    public <T> T getBean(Class<T> beanClass) {
+        if(!beans.containsKey(beanClass)) {
+            throw new RuntimeException("No bean registered for " + beanClass);
+        }
+        return (T)beans.get(beanClass);
+    }
+    
+    // new ===================
+    public boolean isBeanPresent(Class<?> beanClass) {
+        return beans.containsKey(beanClass);
+    }
+    // new ===================
+}
+```
+
+The Change to `MyTinyApplication` is also minor.
+We create an instance of `MyTinyClassProvider` and request a class from it as a test.
+```java
+public class MyTinyApplication {
+    public static void run(Class<?> appClass, String[] args) {
+        if(!appClass.isAnnotationPresent(MyTinyBootApplication.class)) {
+            throw new IllegalArgumentException(appClass.getName() +
+                    " is not annotated with @MyTinyBootApplication");
+        }
+
+        System.out.println("Starting " + appClass.getName());
+
+        try {
+            var instance = appClass.getDeclaredConstructor().newInstance();
+            System.out.println("Created main application instance: " + instance);
+        } catch (NoSuchMethodException | InstantiationException |
+                 RuntimeException | IllegalAccessException |
+                 InvocationTargetException e) {
+            e.printStackTrace();
+            System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
+        }
+
+        var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
+        System.out.println(propertiesScanner.get("my.boot.application-name"));
+
+        var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
+        var context = new MyTinyApplicationContext(propertiesProvider);
+
+        var classScanner = new MyTinyClassScanner();
+        var configClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(),
+                MyTinyConfiguration.class);
+        for(var configClass : configClasses) {
+            context.registerConfiguration(configClass);
+        }
+
+        //new ====================
+        var classProvider = new MyTinyClassProvider(context, propertiesProvider);
+        var homeController = classProvider.getBeanClass(HomeController.class);
+        homeController.index();
+        //new ====================
+
+        var service = context.getBean(AppService.class);
+        System.out.println("Starting " + service.call());
+        System.out.println("Application started!");
+    }
+}
+```
+
+We have also created a few test controller classes. That way we can test if our provider works.
+```java
+
+public class HomeController {
+    @MyTinyInject
+    public HomeController(){
+    }
+
+    public void index(){
+        System.out.println("home controller");
+    }
+}
+
+
+public class AppController {
+    private final AppService appService;
+
+    @MyTinyInject
+    public AppController(AppService appService) {
+        this.appService = appService;
+    }
+
+    public void index(){
+        System.out.println("app controller: " + appService.call());
+    }
+}
+```

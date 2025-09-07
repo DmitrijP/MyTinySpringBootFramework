@@ -1,6 +1,8 @@
 package de.dmitrij.patuk.framework;
 
+import de.dmitrij.patuk.app.AppController;
 import de.dmitrij.patuk.app.AppService;
+import de.dmitrij.patuk.app.HomeController;
 
 import java.lang.reflect.InvocationTargetException;
 
@@ -29,13 +31,19 @@ public class MyTinyApplication {
         var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
         var context = new MyTinyApplicationContext(propertiesProvider);
 
-        //new ====================
         var classScanner = new MyTinyClassScanner();
         var configClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(),
                 MyTinyConfiguration.class);
         for(var configClass : configClasses) {
             context.registerConfiguration(configClass);
         }
+
+        //new ====================
+        var classProvider = new MyTinyClassProvider(context, propertiesProvider);
+        var homeController = classProvider.getBeanClass(HomeController.class);
+        homeController.index();
+        var appController = classProvider.getBeanClass(AppController.class);
+        appController.index();
         //new ====================
 
         var service = context.getBean(AppService.class);
