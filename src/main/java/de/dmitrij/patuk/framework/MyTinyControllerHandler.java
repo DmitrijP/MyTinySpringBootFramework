@@ -7,13 +7,16 @@ public class MyTinyControllerHandler {
     private final MyTinyHttpServer server;
     private final MyTinyClassProvider classProvider;
     private final MyTinyRequestParamHandler requestQueryHandler;
+    private final MyTinyViewRenderer viewRenderer;
 
     public MyTinyControllerHandler(MyTinyHttpServer server,
                                    MyTinyClassProvider classProvider,
-                                   MyTinyRequestParamHandler requestHandler) {
+                                   MyTinyRequestParamHandler requestHandler,
+                                   MyTinyViewRenderer viewRenderer) {
         this.server = server;
         this.classProvider = classProvider;
         this.requestQueryHandler = requestHandler;
+        this.viewRenderer = viewRenderer;
     }
 
     public void registerController(Class<?> controller) {
@@ -43,7 +46,16 @@ public class MyTinyControllerHandler {
                                params.add(requestQueryHandler.handle(param, queryParams));
                             }
                         }
-                        return (String) method.invoke(controllerInstance,  params.toArray());
+                        var type = method.getReturnType();
+                        if(type == String.class) {
+                            return (String) method.invoke(controllerInstance,  params.toArray());
+                        }
+                        if(type == MyTinyModelAndView.class) {
+                            var mv = (MyTinyModelAndView) method.invoke(controllerInstance, params.toArray());
+                            var viewName = classRoute +  mv.getViewName();
+                            return viewRenderer.render(viewName, mv.getModel());
+                        }
+                        throw new RuntimeException("No suitable rendering method found!");
                     } catch (IllegalAccessException | InvocationTargetException e) {
                         throw new RuntimeException(e);
                     }

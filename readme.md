@@ -986,3 +986,280 @@ public class MyTinyControllerHandler {
     }
 }
 ```
+
+## 9. View rendering
+
+Our next task is to implement a simple view renderer that is able to ingest a HTML template and map an object to that template.
+We will first need a few provider that is able to ingest the HTML files.
+```java
+
+public class MyTinyViewProvider {
+    public String provideTinyView(String viewName) {
+        //we hard code the view location to resources/views
+        try (var fis = getClass().getClassLoader().getResourceAsStream("/views" + viewName)) {
+            return readFromInputStream(fis);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load properties file", e);
+        }
+    }
+
+    private String readFromInputStream(InputStream inputStream)
+            throws IOException {
+        StringBuilder resultStringBuilder = new StringBuilder();
+        try (BufferedReader br
+                     = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                resultStringBuilder.append(line).append("\n");
+            }
+        }
+        return resultStringBuilder.toString();
+    }
+}
+```
+
+Next the view renderer. It simply look for strings like `{{ PropertyName }}` inside our HTML and replace them with the matching properties from our Model.
+```java
+public class MyTinyViewRenderer {
+    private final MyTinyViewProvider provider;
+
+    public MyTinyViewRenderer(MyTinyViewProvider provider) {
+        this.provider = provider;
+    }
+
+    public String render(String viewName, Object model) {
+        var template = provider.provideTinyView(viewName);
+        var fields = model.getClass().getDeclaredFields();
+        for (var field : fields) {
+            if(!field.canAccess(model)) {
+                continue;
+            }
+            Object value = null;
+            try {
+                value = field.get(model);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException("Field was not accessible",e);
+            }
+
+            String placeholder = "{{" + field.getName() + "}}";
+            template = template.replace(placeholder, value != null ? value.toString() : "");
+        }
+        return template;
+    }
+}
+```
+
+We will expect a `MyTinyModelAndView` as a return type from our controller methods in order to be able to recognise Methods that require view rendering.
+```java
+public class MyTinyModelAndView {
+    private final String viewName;
+    private final Object model;
+
+    public MyTinyModelAndView(String viewName, Object model) {
+        this.viewName = viewName;
+        this.model = model;
+    }
+
+    public String getViewName() {
+        return viewName;
+    }
+
+    public Object getModel() {
+        return model;
+    }
+}
+```
+
+This ModelAndView will be used in our `MyTinyControllerHandler`. It receives an additional dependency the `MyTinyViewRenderer`.
+We change the Handler to check if the return type of our method is a `String` oder a `MyTinyModelAndView` and use the view renderer to take the HTML file and replace its placeholders according to the model. 
+
+```java
+
+public class MyTinyControllerHandler {
+    private final MyTinyHttpServer server;
+    private final MyTinyClassProvider classProvider;
+    private final MyTinyRequestParamHandler requestQueryHandler;
+    private final MyTinyViewRenderer viewRenderer;
+
+    public MyTinyControllerHandler(MyTinyHttpServer server,
+                                   MyTinyClassProvider classProvider,
+                                   MyTinyRequestParamHandler requestHandler,
+                                   MyTinyViewRenderer viewRenderer) {
+        this.server = server;
+        this.classProvider = classProvider;
+        this.requestQueryHandler = requestHandler;
+        this.viewRenderer = viewRenderer;
+    }
+
+    public void registerController(Class<?> controller) {
+        System.out.printf("Registering controller: %s\n", controller.getSimpleName());
+        if (!controller.isAnnotationPresent(MyTinyController.class)) {
+            return;
+        }
+        var classAnnotation = controller.getAnnotation(MyTinyController.class);
+        var classRoute = classAnnotation.route();
+        System.out.printf("Registering class route: %s\n", classRoute);
+        var methods = controller.getDeclaredMethods();
+        for (var method : methods) {
+            if (method.isAnnotationPresent(MyTinyGet.class)) {
+                var methodAnnotation = method.getAnnotation(MyTinyGet.class);
+                var methodRoute = methodAnnotation.route();
+                System.out.printf("Registering method route: %s\n", methodRoute);
+
+                server.bindContext(classRoute + "/" + methodRoute, (String query) -> {
+                    var queryParams = requestQueryHandler.getRequestParams(query);
+
+                    try {
+                        var controllerInstance = classProvider.getBeanClass(controller);
+                        var methodParams = method.getParameters();
+                        ArrayList<Object> params = new ArrayList<>();
+                        for (var param : methodParams) {
+                            if(requestQueryHandler.canHandle(param)){
+                               params.add(requestQueryHandler.handle(param, queryParams));
+                            }
+                        }
+                        
+                        // new ========
+                        var type = method.getReturnType();
+                        if(type == String.class) {
+                            return (String) method.invoke(controllerInstance,  params.toArray());
+                        }
+                        if(type == MyTinyModelAndView.class) {
+                            var mv = (MyTinyModelAndView) method.invoke(controllerInstance, params.toArray());
+                            var viewName = classRoute +  mv.getViewName();
+                            return viewRenderer.render(viewName, mv.getModel());
+                        }
+                        throw new RuntimeException("No suitable rendering method found!");
+                        // new ========
+                        
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            }
+        }
+    }
+}
+```
+Don't forget to update `MyTinyApplication` to instantiate the new renderer and pass it to our handler.
+
+```java
+public class MyTinyApplication {
+    public static void run(Class<?> appClass, String[] args) {
+        if(!appClass.isAnnotationPresent(MyTinyBootApplication.class)) {
+            throw new IllegalArgumentException(appClass.getName() +
+                    " is not annotated with @MyTinyBootApplication");
+        }
+
+        System.out.println("Starting " + appClass.getName());
+
+        try {
+            var instance = appClass.getDeclaredConstructor().newInstance();
+            System.out.println("Created main application instance: " + instance);
+        } catch (NoSuchMethodException | InstantiationException |
+                 RuntimeException | IllegalAccessException |
+                 InvocationTargetException e) {
+            e.printStackTrace();
+            System.out.printf("Failed to instantiate main application %s\n", appClass.getName());
+        }
+
+        var propertiesScanner = new MyTinyPropertiesScanner("application.properties");
+        System.out.println(propertiesScanner.get("my.boot.application-name"));
+
+        var propertiesProvider = new MyTinyPropertiesProvider(propertiesScanner);
+        var context = new MyTinyApplicationContext(propertiesProvider);
+
+        var classScanner = new MyTinyClassScanner();
+        var configClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(),
+                MyTinyConfiguration.class);
+        for(var configClass : configClasses) {
+            context.registerConfiguration(configClass);
+        }
+
+        var classProvider = new MyTinyClassProvider(context, propertiesProvider);
+        var server = new MyTinyHttpServer(8080);
+
+        //new ====================
+        var viewProvider = new MyTinyViewProvider();
+        var viewRenderer = new MyTinyViewRenderer(viewProvider);
+        var myRequestParamHandler = new MyTinyRequestParamHandler();
+        var controllerHandler = new MyTinyControllerHandler(server, classProvider, myRequestParamHandler, viewRenderer);
+        //new ====================
+
+        var controllerClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(), MyTinyController.class);
+        for(var controllerClass : controllerClasses) {
+            controllerHandler.registerController(controllerClass);
+        }
+        System.out.println("Application started!");
+        server.start();
+
+        // gracefully shutdown when a kill signal is sent
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down server...");
+            server.stop();
+            System.out.println("Server stopped.");
+        }));
+    }
+}
+```
+
+Now we need to update our controller and create a HTML view.
+```java
+
+@MyTinyController(route = "/app")
+public class AppController {
+    private final AppService appService;
+
+    @MyTinyInject
+    public AppController(AppService appService) {
+        this.appService = appService;
+    }
+
+    @MyTinyGet(route = "index")
+    public String index(@MyTinyRequestParam(name = "name") String name) {
+        return wrapInHtml("app controller \n" + "called by: " + name, appService.call());
+    }
+
+    @MyTinyGet(route = "model-and-view")
+    public MyTinyModelAndView modelAndView(@MyTinyRequestParam(name = "name") String name) {
+        return new MyTinyModelAndView("/index", new Container("Hello " + name, "This is a body!"));
+    }
+
+    private String wrapInHtml(String controller, String serviceResult) {
+        return String.format("<html><body><h1>Welcome To</h1><p>%s</p><p>%s</p></body></html>", controller, serviceResult);
+    }
+
+    public class Container {
+        private final String title;
+        private final String body;
+
+        public Container(String title,String body) {
+            this.title = title;
+            this.body = body;
+        }
+
+        public String getBody() {
+            return body;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+    }
+}
+```
+
+The HTML View inside `resources/views/app/index.html`
+```html 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<h1>{{ Title }}</h1>
+<p>{{ Body }}</p>
+</body>
+</html>
+```

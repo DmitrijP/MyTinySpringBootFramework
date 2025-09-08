@@ -2,15 +2,22 @@ package de.dmitrij.patuk.framework;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import java.lang.reflect.Method;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @MyTinyController(route = "/test")
 class TestController {
     @MyTinyGet(route = "hello")
-    public String hello() { return "Hello"; }
-    public String notMapped() { return "No"; }
+    public String hello() {
+        return "Hello";
+    }
+
+    public String notMapped() {
+        return "No";
+    }
 }
 
 public class MyTinyControllerHandlerTests {
@@ -18,13 +25,15 @@ public class MyTinyControllerHandlerTests {
     MyTinyClassProvider provider;
     MyTinyControllerHandler handler;
     MyTinyRequestParamHandler requestParamHandler;
+    MyTinyViewRenderer viewRenderer;
 
     @BeforeEach
     void setup() {
         server = mock(MyTinyHttpServer.class);
         provider = mock(MyTinyClassProvider.class);
         requestParamHandler = mock(MyTinyRequestParamHandler.class);
-        handler = new MyTinyControllerHandler(server, provider,  requestParamHandler);
+        viewRenderer = mock(MyTinyViewRenderer.class);
+        handler = new MyTinyControllerHandler(server, provider, requestParamHandler, viewRenderer);
     }
 
     @Test
@@ -36,7 +45,8 @@ public class MyTinyControllerHandlerTests {
 
     @Test
     void doesNotRegisterIfNotAnnotated() {
-        class NotAController {}
+        class NotAController {
+        }
         handler.registerController(NotAController.class);
         verify(server, never()).bindContext(anyString(), any());
     }
@@ -45,8 +55,12 @@ public class MyTinyControllerHandlerTests {
     void doesNotRegisterMethodWithoutGetAnnotation() {
         class ControllerNoGet {
             @MyTinyController(route = "/noGet")
-            public class Inner {}
-            public String notMapped() { return "No"; }
+            public class Inner {
+            }
+
+            public String notMapped() {
+                return "No";
+            }
         }
         handler.registerController(ControllerNoGet.class);
         verify(server, never()).bindContext(anyString(), any());

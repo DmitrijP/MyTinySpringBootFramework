@@ -38,8 +38,10 @@ public class MyTinyApplication {
         var server = new MyTinyHttpServer(8080);
 
         //new ====================
+        var viewProvider = new MyTinyViewProvider();
+        var viewRenderer = new MyTinyViewRenderer(viewProvider);
         var myRequestParamHandler = new MyTinyRequestParamHandler();
-        var controllerHandler = new MyTinyControllerHandler(server, classProvider, myRequestParamHandler);
+        var controllerHandler = new MyTinyControllerHandler(server, classProvider, myRequestParamHandler, viewRenderer);
         //new ====================
 
         var controllerClasses = classScanner.findAnnotatedClasses(appClass.getPackageName(), MyTinyController.class);
