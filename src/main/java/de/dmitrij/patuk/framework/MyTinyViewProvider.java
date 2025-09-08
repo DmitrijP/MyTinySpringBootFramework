@@ -7,7 +7,11 @@ import java.io.InputStreamReader;
 
 public class MyTinyViewProvider {
     public String provideTinyView(String viewName) {
-        try (var fis = getClass().getClassLoader().getResourceAsStream("/views" + viewName)) {
+        var vName = "views" + viewName + ".html";
+        try (var fis = getClass().getClassLoader().getResourceAsStream(vName)) {
+            if(fis == null) {
+                throw new RuntimeException("Unable to read view " + vName);
+            }
             return readFromInputStream(fis);
         } catch (IOException e) {
             throw new RuntimeException("Failed to load properties file", e);

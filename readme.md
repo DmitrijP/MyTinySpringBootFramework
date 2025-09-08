@@ -1263,3 +1263,257 @@ The HTML View inside `resources/views/app/index.html`
 </body>
 </html>
 ```
+
+## 10. View rendering with loops
+
+Our next task is to be able to handle loops in our view.
+The syntax that i propose is `{{ foreach item : items }} {{ item }} {{ endforeach }}`.
+This should be enough to define simple loops.
+Our HTML template would look something like this:
+```HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<h1>Person</h1>
+<p>This page shows the places the following person {{ name }} with the age of {{ age }} has visited</p>
+<ul>
+    {{ foreach value : values }}
+    <li>{{ value }}</li>
+    {{ endforeach }}
+</ul>
+</body>
+</html>
+```
+
+We need to update our `MyTinyViewRenderer`.
+I have changed the existing logic to use methods instead of fields. We could use both but template engines usually go for methods, while data driven libraries like ORMs go for fields.
+That is why we now need three additional methods `isGetter(Method method)`, `getPropertyName(Method method)` and `toPropertyName(String propertyName)`. We need those simply because getters in Java are usually prefixed by `get` and an uppercase first letter. That does not match our syntax in the template.   
+Lets now face our updated `render()` method. We will first declare a regex to match the foreach pattern and divide it into groups. Next we use our three methods to get the collection by name and iterate over the items of the collection while replacing the loop variable block.
+```java
+public class MyTinyViewRenderer {
+    private final MyTinyViewProvider provider;
+
+    public MyTinyViewRenderer(MyTinyViewProvider provider) {
+        this.provider = provider;
+    }
+
+    public String render(String viewName, Object model) {
+        var template = provider.provideTinyView(viewName);
+        // our foreach will look like this {{ foreach item : items }} text {{ endforeach }}
+        Pattern foreachPattern = Pattern.compile("\\{\\{ foreach (\\w+) : (\\w+) }}(.*?)\\{\\{ endforeach }}", Pattern.DOTALL);
+        Matcher matcher = foreachPattern.matcher(template);
+
+        try {
+            while (matcher.find()) {
+                String loopVar = matcher.group(1);
+                String collectionName = matcher.group(2);
+                String loopBody = matcher.group(3);
+
+                // Get collection from model
+                Method method = model.getClass().getDeclaredMethod(toPropertyName(collectionName));
+
+                Object collectionObj = method.invoke(model);
+
+                if (!(collectionObj instanceof Collection<?> col)) {
+                    throw new RuntimeException("Field " + collectionName + " is not a Collection");
+                }
+
+                // Build replacement
+                StringBuilder loopResult = new StringBuilder();
+                for (Object item : col) {
+                    String itemBlock = loopBody.replace("{{ " + loopVar + " }}", item.toString());
+                    loopResult.append(itemBlock);
+                }
+
+                // Replace the entire foreach block
+                template = template.replace(matcher.group(0), loopResult.toString());
+            }
+        } catch (NoSuchMethodException | IllegalAccessException |InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+
+
+        var methods = model.getClass().getDeclaredMethods();
+        for (var method : methods) {
+            if(!method.canAccess(model)) {
+                continue;
+            }
+            if(!isGetter(method)) {
+                continue;
+            }
+            var propertyName = getPropertyName(method);
+            Object value = null;
+            try {
+                value = method.invoke(model);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                throw new RuntimeException("Field was not accessible",e);
+            }
+
+            String placeholder = "{{" + propertyName + "}}";
+            template = template.replace(placeholder, value != null ? value.toString() : "");
+        }
+        return template;
+    }
+
+    private boolean isGetter(Method method) {
+        if (method.getParameterCount() > 0) return false;
+        if (method.getReturnType() == void.class) return false;
+
+        String name = method.getName();
+        if (name.startsWith("get") && name.length() > 3) return true;
+        if (name.startsWith("is") && name.length() > 2
+                && (method.getReturnType() == boolean.class || method.getReturnType() == Boolean.class)) {
+            return true;
+        }
+        return false;
+    }
+
+    private String getPropertyName(Method method) {
+        String name = method.getName();
+        if (name.startsWith("get")) {
+            return Character.toLowerCase(name.charAt(3)) + name.substring(4);
+        }
+        if (name.startsWith("is")) {
+            return Character.toLowerCase(name.charAt(2)) + name.substring(3);
+        }
+        return name;
+    }
+
+    private String toPropertyName(String propertyName) {
+        return "get" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+    }
+}
+```
+
+The updated `AppController` now using our loop.
+
+```java
+@MyTinyController(route = "/app")
+public class AppController {
+    private final AppService appService;
+
+    @MyTinyInject
+    public AppController(AppService appService) {
+        this.appService = appService;
+    }
+
+    @MyTinyGet(route = "index")
+    public String index(@MyTinyRequestParam(name = "name") String name) {
+        return wrapInHtml("app controller \n" + "called by: " + name, appService.call());
+    }
+
+    @MyTinyGet(route = "model-and-view")
+    public MyTinyModelAndView modelAndView(@MyTinyRequestParam(name = "name") String name) {
+        return new MyTinyModelAndView("/index", new Container("Hello " + name, "This is a body!"));
+    }
+
+    @MyTinyGet(route = "iterations")
+    public MyTinyModelAndView modelAndView(@MyTinyRequestParam(name = "name") String name, @MyTinyRequestParam(name = "age")String age) {
+        return new MyTinyModelAndView("/iterations", new Container2(name, age, List.of("Mannheim", "Heidelberg", "Karlsruhe", "Bruchsal")));
+    }
+
+    private String wrapInHtml(String controller, String serviceResult) {
+        return String.format("<html><body><h1>Welcome To</h1><p>%s</p><p>%s</p></body></html>", controller, serviceResult);
+    }
+
+    public class Container2 {
+        private final String name;
+        private final String age;
+        private final Collection<String> values;
+
+        public Container2(String name, String age, Collection<String> values) {
+            this.name = name;
+            this.age = age;
+            this.values = values;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getAge() {
+            return age;
+        }
+
+        public Collection<String> getValues() {
+            return values;
+        }
+    }
+
+    public class Container {
+        private final String title;
+        private final String body;
+
+        public Container(String title,String body) {
+            this.title = title;
+            this.body = body;
+        }
+
+        public String getBody() {
+            return body;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+    }
+}
+```
+
+Our Server Implementation was lacking, it was swallowing exceptions. Here the fixed version.
+We did not need to close the exchange. We also needed to call the renderer earlier to be able to catch exceptions and handle them gracefully.
+```java
+public class MyTinyHttpServer {
+    private final int port;
+    private HttpServer server;
+
+    public MyTinyHttpServer(int port) {
+        try {
+            this.port = port;
+            this.server = HttpServer.create(new InetSocketAddress(port), 0);
+            System.out.printf("Server created on port %d %n", port);
+        } catch (IOException e) {
+            System.out.printf("Failed to create server on port %d%n",port);
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void start() {
+        server.start();
+        System.out.printf("Server created on port %d %n", port);
+    }
+
+    public void bindContext(String path, GetResponse response) {
+        System.out.printf("Binding context for path: %s%n", path);
+        server.createContext(path, exchange -> {
+            try {
+                var uri = exchange.getRequestURI();
+                System.out.printf("URI: %s%n", uri);
+                var query = uri.getQuery();
+                System.out.printf("Query: %s%n", query);
+                var responseString = response.handle(query).getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, 0);
+                exchange.getResponseBody().write(responseString);
+                exchange.getResponseBody().close();
+            } catch (Exception e) {
+                System.out.printf("server error: %s%n", e.getMessage());
+                exchange.sendResponseHeaders(500, 0);
+                exchange.getResponseBody().write(e.getMessage().getBytes(StandardCharsets.UTF_8));
+                exchange.getResponseBody().close();
+            }
+        });
+    }
+
+    public void stop() {
+        server.stop(0);
+    }
+
+    public interface GetResponse{
+        String handle(String query);
+    }
+}
+```

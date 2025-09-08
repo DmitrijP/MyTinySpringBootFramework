@@ -1,4 +1,4 @@
-package de.dmitrij.patuk.app;
+package de.dmitrij.patuk.app.services;
 
 public class AppService {
     private final String importantConfigValue;

@@ -16,6 +16,7 @@ public class MyTinyHttpServer {
             this.server = HttpServer.create(new InetSocketAddress(port), 0);
             System.out.printf("Server created on port %d %n", port);
         } catch (IOException e) {
+            System.out.printf("Failed to create server on port %d%n",port);
             throw new RuntimeException(e);
         }
     }
@@ -28,14 +29,21 @@ public class MyTinyHttpServer {
     public void bindContext(String path, GetResponse response) {
         System.out.printf("Binding context for path: %s%n", path);
         server.createContext(path, exchange -> {
-            var uri = exchange.getRequestURI();
-            System.out.printf("URI: %s%n", uri);
-            var query = uri.getQuery();
-            System.out.printf("Query: %s%n", query);
-            exchange.sendResponseHeaders(200, 0);
-            exchange.getResponseBody().write(response.handle(query).getBytes(StandardCharsets.UTF_8));
-            exchange.getResponseBody().close();
-            exchange.close();
+            try {
+                var uri = exchange.getRequestURI();
+                System.out.printf("URI: %s%n", uri);
+                var query = uri.getQuery();
+                System.out.printf("Query: %s%n", query);
+                var responseString = response.handle(query).getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, 0);
+                exchange.getResponseBody().write(responseString);
+                exchange.getResponseBody().close();
+            } catch (Exception e) {
+                System.out.printf("server error: %s%n", e.getMessage());
+                exchange.sendResponseHeaders(500, 0);
+                exchange.getResponseBody().write(e.getMessage().getBytes(StandardCharsets.UTF_8));
+                exchange.getResponseBody().close();
+            }
         });
     }
 

@@ -1,5 +1,6 @@
-package de.dmitrij.patuk.app;
+package de.dmitrij.patuk.app.config;
 
+import de.dmitrij.patuk.app.services.AppService;
 import de.dmitrij.patuk.framework.MyTinyBean;
 import de.dmitrij.patuk.framework.MyTinyConfiguration;
 import de.dmitrij.patuk.framework.MyTinyValue;
