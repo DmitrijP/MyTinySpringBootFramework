@@ -1,5 +1,21 @@
 # My tiny spring boot like framework
 
+## Introduction
+
+This project demonstrates the step-by-step development of a **minimalistic Spring Boot–like framework** in Java. The goal is to illustrate the core concepts of modern frameworks such as **annotations, dependency injection, configuration management**, and **controller handling** through a simplified implementation.
+
+The documentation follows the structure of the [YouTube tutorial series](https://www.youtube.com/playlist?list=PLtFURTtAiZIk0z36rk88G8L4nN9xFDc8S) and guides you through each stage of the process:
+
+* Creating a startup annotation and application entry point
+* Loading and using configuration files
+* Building a dependency container for beans
+* Automatically injecting properties into services
+* Scanning for annotated classes
+* Dynamically providing classes and their dependencies
+* Implementing a simple HTTP server with controllers and GET routes
+
+By constructing the framework from scratch, this project reveals how many of the mechanisms that are taken for granted in large frameworks like Spring actually work under the hood. It serves as a practical way to **learn, experiment, and understand** how dependency injection, inversion of control, and annotation-based configuration interact to form the backbone of modern Java applications.
+
 ## 1. Creation of annotation and entrypoint into the framework
 
 Firs we create our own annotation that marks the entrypoint into our framework. 
