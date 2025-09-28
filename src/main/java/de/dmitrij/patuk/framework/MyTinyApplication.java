@@ -1,5 +1,8 @@
 package de.dmitrij.patuk.framework;
 
+import de.dmitrij.patuk.template.MyTinyParser;
+import de.dmitrij.patuk.template.MyTinyTokenizer;
+
 import java.lang.reflect.InvocationTargetException;
 
 public class MyTinyApplication {
@@ -39,7 +42,9 @@ public class MyTinyApplication {
 
         //new ====================
         var viewProvider = new MyTinyViewProvider();
-        var viewRenderer = new MyTinyViewRenderer(viewProvider);
+        var tokenizer = new MyTinyTokenizer();
+        var parser = new MyTinyParser();
+        var viewRenderer = new MyTinyViewRenderer(viewProvider, parser, tokenizer);
         var myRequestParamHandler = new MyTinyRequestParamHandler();
         var controllerHandler = new MyTinyControllerHandler(server, classProvider, myRequestParamHandler, viewRenderer);
         //new ====================

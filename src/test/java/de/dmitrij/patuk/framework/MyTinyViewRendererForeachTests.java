@@ -1,5 +1,7 @@
 package de.dmitrij.patuk.framework;
 
+import de.dmitrij.patuk.template.MyTinyParser;
+import de.dmitrij.patuk.template.MyTinyTokenizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -16,11 +18,15 @@ class ListModel {
 public class MyTinyViewRendererForeachTests {
     MyTinyViewProvider provider;
     MyTinyViewRenderer renderer;
+    MyTinyParser parser;
+    MyTinyTokenizer tokenizer;
 
     @BeforeEach
     void setup() {
         provider = mock(MyTinyViewProvider.class);
-        renderer = new MyTinyViewRenderer(provider);
+        parser = mock(MyTinyParser.class);
+        tokenizer = mock(MyTinyTokenizer.class);
+        renderer = new MyTinyViewRenderer(provider, parser, tokenizer);
     }
 
     @Test

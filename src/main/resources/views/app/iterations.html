@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <title>Title</title>
 </head>
-<body>
+<body style="color: white; background-color: black">
 <h1>Person</h1>
-<p>This page shows the places the following person {{ name }} with the age of {{ age }} has visited</p>
+<p>This page shows the places the following person {{ model.name }} with the age of {{ model.age }} has visited</p>
 <ul>
-    {{ foreach value : values }}
+    {{ foreach value : model.values }}
     <li>{{ value }}</li>
     {{ endforeach }}
 </ul>

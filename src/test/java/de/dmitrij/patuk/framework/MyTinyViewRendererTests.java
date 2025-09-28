@@ -1,7 +1,11 @@
 package de.dmitrij.patuk.framework;
 
+import de.dmitrij.patuk.template.MyTinyParser;
+import de.dmitrij.patuk.template.MyTinyTokenizer;
+import de.dmitrij.patuk.template.token.MyTinyToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -14,11 +18,15 @@ class DummyModel {
 public class MyTinyViewRendererTests {
     MyTinyViewProvider provider;
     MyTinyViewRenderer renderer;
+    MyTinyParser parser;
+    MyTinyTokenizer tokenizer;
 
     @BeforeEach
     void setup() {
         provider = mock(MyTinyViewProvider.class);
-        renderer = new MyTinyViewRenderer(provider);
+        parser = mock(MyTinyParser.class);
+        tokenizer = mock(MyTinyTokenizer.class);
+        renderer = new MyTinyViewRenderer(provider, parser, tokenizer);
     }
 
     @Test

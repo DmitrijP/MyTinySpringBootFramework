@@ -17,7 +17,7 @@ public class HomeController {
     }
 
     private String wrapInHtml(String content) {
-        return String.format("<html><body><h1>Welcome To</h1><p>%s</p></body></html>", content);
+        return String.format("<html><body style=\"color: white; background-color: black\"><h1>Welcome To</h1><p>%s</p></body></html>", content);
     }
 
     @MyTinyGet(route = "not-exists")

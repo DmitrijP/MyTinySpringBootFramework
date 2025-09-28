@@ -1,5 +1,7 @@
 package de.dmitrij.patuk.app.controller;
 
+import de.dmitrij.patuk.app.models.AppListResultModel;
+import de.dmitrij.patuk.app.models.AppModelFactory;
 import de.dmitrij.patuk.app.services.AppService;
 import de.dmitrij.patuk.framework.*;
 
@@ -27,12 +29,23 @@ public class AppController {
 
     @MyTinyGet(route = "iterations")
     public MyTinyModelAndView modelAndView(@MyTinyRequestParam(name = "name") String name, @MyTinyRequestParam(name = "age")String age) {
-        return new MyTinyModelAndView("/iterations", new Container2(name, age, List.of("Mannheim", "Heidelberg", "Karlsruhe", "Bruchsal")));
+        return new MyTinyModelAndView("/iterations", new Container2(
+                name,
+                age,
+                List.of("Mannheim", "Heidelberg", "Karlsruhe", "Bruchsal")));
+    }
+
+    @MyTinyGet(route = "apps")
+    public MyTinyModelAndView apps() {
+        return new MyTinyModelAndView("/apps",
+                new AppListResultModel(AppModelFactory.createAppListModels()));
     }
 
     private String wrapInHtml(String controller, String serviceResult) {
-        return String.format("<html><body><h1>Welcome To</h1><p>%s</p><p>%s</p></body></html>", controller, serviceResult);
+        return String.format("<html><body style=\"color: white; background-color: black\"><h1>Welcome To</h1><p>%s</p><p>%s</p></body></html>", controller, serviceResult);
     }
+
+
 
     public class Container2 {
         private final String name;
